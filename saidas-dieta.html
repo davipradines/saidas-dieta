@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Saídas">
+<meta name="theme-color" content="#f5f5f0">
+<title>Saídas da dieta</title>
+<style>
+  :root {
+    --bg: #f5f5f0;
+    --card: #ffffff;
+    --text: #222222;
+    --muted: #777777;
+    --accent: #3d7a5b;
+    --warn: #b5651d;
+    --line: #e2e2dc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 32px);
+    min-height: 100vh;
+  }
+  h1 { font-size: 22px; margin: 8px 0 2px; }
+  h2 { font-size: 17px; margin: 24px 0 8px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+  .counter { font-size: 44px; font-weight: 700; margin: 4px 0; }
+  .label { color: var(--muted); font-size: 14px; }
+  .restam { font-size: 16px; font-weight: 600; margin-top: 4px; }
+  .warn { color: var(--warn); font-weight: 600; margin-top: 12px; font-size: 15px; line-height: 1.4; }
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 12px;
+    padding: 14px;
+    width: 100%;
+    font-size: 17px;
+    font-weight: 600;
+    background: var(--accent);
+    color: #ffffff;
+    cursor: pointer;
+  }
+  button.secondary { background: #e9e9e3; color: var(--text); }
+  input, textarea {
+    width: 100%;
+    font: inherit;
+    font-size: 16px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-top: 6px;
+    background: #ffffff;
+    color: var(--text);
+  }
+  label { display: block; margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .botoes { display: flex; gap: 10px; margin-top: 16px; }
+  .item { border-top: 1px solid var(--line); padding: 12px 0; }
+  .item:first-child { border-top: none; padding-top: 0; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .comida { font-weight: 600; margin: 4px 0 0; font-size: 16px; }
+  .nota { font-size: 15px; color: #444; margin: 2px 0 0; }
+  .apagar {
+    background: none;
+    color: #b33a3a;
+    width: auto;
+    padding: 4px 0;
+    font-size: 14px;
+    font-weight: 500;
+    margin-top: 6px;
+  }
+  .hidden { display: none !important; }
+  .vazio { color: var(--muted); font-size: 15px; margin: 0; }
+</style>
+</head>
+<body>
+
+  <h1>Saídas da dieta</h1>
+  <p class="sub">Semana de domingo a domingo</p>
+
+  <div class="card">
+    <div class="label">Saídas usadas nesta semana</div>
+    <p class="counter" id="usadas">0</p>
+    <div class="restam" id="restam">Restam 2</div>
+    <div class="warn hidden" id="aviso">
+      Você já chegou ao limite de 2 saídas desta semana. Pode continuar registrando, e tudo fica salvo.
+    </div>
+  </div>
+
+  <button id="abrir" type="button">Registrar saída</button>
+
+  <div class="card hidden" id="formulario" style="margin-top: 14px;">
+    <form id="form" autocomplete="off">
+      <label for="comida">O que comeu</label>
+      <input id="comida" type="text" required maxlength="120" placeholder="Ex.: pizza com amigos">
+
+      <label for="nota">Nota curta (opcional)</label>
+      <textarea id="nota" rows="2" maxlength="200" placeholder="Ex.: aniversário da Ana"></textarea>
+
+      <div class="botoes">
+        <button type="button" class="secondary" id="cancelar">Cancelar</button>
+        <button type="submit">Salvar</button>
+      </div>
+    </form>
+  </div>
+
+  <h2>Registros desta semana</h2>
+  <div class="card" id="lista"></div>
+
+<script>
+  const LIMITE = 2;
+  const CHAVE = 'saidasDieta_v1';
+
+  const usadasEl = document.getElementById('usadas');
+  const restamEl = document.getElementById('restam');
+  const avisoEl = document.getElementById('aviso');
+  const listaEl = document.getElementById('lista');
+  const formEl = document.getElementById('formulario');
+  const form = document.getElementById('form');
+  const comidaEl = document.getElementById('comida');
+  const notaEl = document.getElementById('nota');
+
+  // Início da semana atual: o domingo mais recente, à meia-noite.
+  function inicioDaSemana() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - d.getDay()); // getDay(): 0 = domingo
+    return d.getTime();
+  }
+
+  function carregar() {
+    try {
+      return JSON.parse(localStorage.getItem(CHAVE)) || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function salvarTudo(registros) {
+    localStorage.setItem(CHAVE, JSON.stringify(registros));
+  }
+
+  function registrosDaSemana() {
+    const inicio = inicioDaSemana();
+    return carregar()
+      .filter(r => r.quando >= inicio)
+      .sort((a, b) => b.quando - a.quando);
+  }
+
+  function formatarData(timestamp) {
+    return new Date(timestamp).toLocaleString('pt-BR', {
+      weekday: 'short',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function criarElemento(tag, classe, texto) {
+    const el = document.createElement(tag);
+    if (classe) el.className = classe;
+    if (texto !== undefined) el.textContent = texto;
+    return el;
+  }
+
+  function render() {
+    const semana = registrosDaSemana();
+    const usadas = semana.length;
+
+    usadasEl.textContent = usadas;
+    restamEl.textContent = 'Restam ' + Math.max(0, LIMITE - usadas);
+    avisoEl.classList.toggle('hidden', usadas < LIMITE);
+
+    listaEl.innerHTML = '';
+
+    if (semana.length === 0) {
+      listaEl.appendChild(criarElemento('p', 'vazio', 'Nenhuma saída registrada nesta semana.'));
+      return;
+    }
+
+    semana.forEach(r => {
+      const item = criarElemento('div', 'item');
+      item.appendChild(criarElemento('div', 'meta', formatarData(r.quando)));
+      item.appendChild(criarElemento('div', 'comida', r.comida));
+      if (r.nota) item.appendChild(criarElemento('div', 'nota', r.nota));
+
+      const apagar = criarElemento('button', 'apagar', 'Apagar');
+      apagar.type = 'button';
+      apagar.addEventListener('click', () => {
+        if (confirm('Apagar este registro?')) {
+          salvarTudo(carregar().filter(x => x.id !== r.id));
+          render();
+        }
+      });
+      item.appendChild(apagar);
+
+      listaEl.appendChild(item);
+    });
+  }
+
+  document.getElementById('abrir').addEventListener('click', () => {
+    formEl.classList.remove('hidden');
+    comidaEl.focus();
+  });
+
+  document.getElementById('cancelar').addEventListener('click', () => {
+    form.reset();
+    formEl.classList.add('hidden');
+  });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const comida = comidaEl.value.trim();
+    if (!comida) return;
+
+    const registros = carregar();
+    registros.push({
+      id: Date.now(),
+      quando: Date.now(),
+      comida: comida,
+      nota: notaEl.value.trim()
+    });
+    salvarTudo(registros);
+
+    form.reset();
+    formEl.classList.add('hidden');
+    render();
+  });
+
+  render();
+</script>
+</body>
+</html>
